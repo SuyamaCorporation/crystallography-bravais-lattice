@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ブラベ格子 結晶構造 Canvas ビューア</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4">
+<div class="max-w-5xl mx-auto">
+  <h1 class="text-2xl font-bold text-emerald-400 mb-1">ブラベ格子 結晶構造 Canvas ビューア</h1>
+  <p class="text-gray-400 text-sm mb-4">14種のブラベ格子を2D投影で描画し、結晶構造を解説します</p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+    <!-- Controls -->
+    <div class="bg-gray-800 rounded-lg p-4">
+      <h2 class="text-base font-semibold text-emerald-300 mb-3">格子選択</h2>
+
+      <div class="mb-3">
+        <label class="block text-xs text-gray-400 mb-1">結晶系</label>
+        <select id="crystalSystem" onchange="filterLattices()" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+          <option value="">すべて</option>
+          <option value="cubic">立方晶系</option>
+          <option value="tetragonal">正方晶系</option>
+          <option value="orthorhombic">斜方晶系</option>
+          <option value="hexagonal">六方晶系</option>
+          <option value="trigonal">三方晶系</option>
+          <option value="monoclinic">単斜晶系</option>
+          <option value="triclinic">三斜晶系</option>
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label class="block text-xs text-gray-400 mb-1">格子タイプ</label>
+        <select id="latticeSelect" onchange="selectLattice()" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm">
+        </select>
+      </div>
+
+      <div class="space-y-2 mb-3">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">a (Å): <span id="aVal">4.0</span></label>
+          <input id="paramA" type="range" min="2" max="8" step="0.1" value="4.0" oninput="updateParam('a')" class="w-full accent-emerald-400">
+        </div>
+        <div id="bGroup">
+          <label class="block text-xs text-gray-400 mb-1">b (Å): <span id="bVal">4.0</span></label>
+          <input id="paramB" type="range" min="2" max="8" step="0.1" value="4.0" oninput="updateParam('b')" class="w-full accent-emerald-400">
+        </div>
+        <div id="cGroup">
+          <label class="block text-xs text-gray-400 mb-1">c (Å): <span id="cVal">6.0</span></label>
+          <input id="paramC" type="range" min="2" max="12" step="0.1" value="6.0" oninput="updateParam('c')" class="w-full accent-emerald-400">
+        </div>
+        <div id="betaGroup">
+          <label class="block text-xs text-gray-400 mb-1">β (°): <span id="betaVal">90</span></label>
+          <input id="paramBeta" type="range" min="70" max="120" step="1" value="90" oninput="updateParam('beta')" class="w-full accent-emerald-400">
+        </div>
+      </div>
+
+      <div id="latticeInfo" class="bg-gray-700 rounded p-3 text-xs space-y-1"></div>
+    </div>
+
+    <div class="lg:col-span-2 space-y-4">
+      <div class="bg-gray-800 rounded-lg p-4">
+        <h2 class="text-base font-semibold text-emerald-300 mb-2">格子構造図（等角投影）</h2>
+        <canvas id="latticeCanvas" width="560" height="300" class="w-full rounded bg-gray-950"></canvas>
+      </div>
+      <div class="bg-gray-800 rounded-lg p-4">
+        <h2 class="text-base font-semibold text-emerald-300 mb-2">ブラベ格子 14種 一覧</h2>
+        <div id="latticeGrid" class="grid grid-cols-7 gap-1 text-xs"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-gray-800 rounded-lg p-4">
+    <h2 class="text-base font-semibold text-gray-300 mb-2">結晶学解説</h2>
+    <div class="text-sm text-gray-400 grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div>
+        <p class="text-emerald-400 font-semibold mb-1">ブラベ格子</p>
+        <p>3D空間の並進対称性を持つ全ての格子を7結晶系×14種に分類（1848年 Auguste Bravais）。どの結晶も14種のいずれかに属する。</p>
+      </div>
+      <div>
+        <p class="text-emerald-400 font-semibold mb-1">配位数</p>
+        <p>単純立方(SC)=6、体心立方(BCC)=8、面心立方(FCC)=12。配位数が大きいほど充填率が高く、密度の高い結晶構造を示す。</p>
+      </div>
+      <div>
+        <p class="text-emerald-400 font-semibold mb-1">充填率</p>
+        <p>SC=52.4%、BCC=68.0%、FCC=74.0%（最密充填）。HCP（六方最密充填）もFCCと同じ74.0%の充填率を持つ。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
+const LATTICES = [
+  { id:'sc',  name:'単純立方 (SC)',    system:'cubic',        symbol:'cP', coord:6,  packing:52.4, a:true,b:false,c:false,beta:false, example:'Po' },
+  { id:'bcc', name:'体心立方 (BCC)',   system:'cubic',        symbol:'cI', coord:8,  packing:68.0, a:true,b:false,c:false,beta:false, example:'Fe, W, Cr' },
+  { id:'fcc', name:'面心立方 (FCC)',   system:'cubic',        symbol:'cF', coord:12, packing:74.0, a:true,b:false,c:false,beta:false, example:'Al, Cu, Au' },
+  { id:'stet',name:'単純正方',          system:'tetragonal',   symbol:'tP', coord:6,  packing:52.4, a:true,b:false,c:true, beta:false, example:'In' },
+  { id:'btet',name:'体心正方',          system:'tetragonal',   symbol:'tI', coord:8,  packing:null, a:true,b:false,c:true, beta:false, example:'Sn' },
+  { id:'so',  name:'単純斜方',          system:'orthorhombic', symbol:'oP', coord:6,  packing:null, a:true,b:true, c:true, beta:false, example:'S' },
+  { id:'bco', name:'底心斜方',          system:'orthorhombic', symbol:'oC', coord:null,packing:null,a:true,b:true, c:true, beta:false, example:'Cl₂' },
+  { id:'bco2',name:'体心斜方',          system:'orthorhombic', symbol:'oI', coord:null,packing:null,a:true,b:true, c:true, beta:false, example:'Ga' },
+  { id:'fco', name:'面心斜方',          system:'orthorhombic', symbol:'oF', coord:null,packing:null,a:true,b:true, c:true, beta:false, example:'U' },
+  { id:'hex', name:'六方晶 (HCP)',      system:'hexagonal',    symbol:'hP', coord:12, packing:74.0, a:true,b:false,c:true, beta:false, example:'Mg, Ti, Zn' },
+  { id:'rho', name:'三方晶（菱面体）',  system:'trigonal',     symbol:'hR', coord:null,packing:null,a:true,b:false,c:true, beta:false, example:'Bi, As' },
+  { id:'sm',  name:'単純単斜',          system:'monoclinic',   symbol:'mP', coord:null,packing:null,a:true,b:true, c:true, beta:true,  example:'gypsum' },
+  { id:'bcm', name:'底心単斜',          system:'monoclinic',   symbol:'mC', coord:null,packing:null,a:true,b:true, c:true, beta:true,  example:'mica' },
+  { id:'tri', name:'三斜晶',            system:'triclinic',    symbol:'aP', coord:null,packing:null,a:true,b:true, c:true, beta:true,  example:'albite' },
+];
+
+let currentLattice = LATTICES[1]; // BCC default
+let params = { a: 4.0, b: 4.0, c: 4.0, beta: 90 };
+
+function filterLattices() {
+  const sys = document.getElementById('crystalSystem').value;
+  const filtered = sys ? LATTICES.filter(l => l.system === sys) : LATTICES;
+  const sel = document.getElementById('latticeSelect');
+  sel.innerHTML = filtered.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+  const cur = filtered.find(l => l.id === currentLattice.id) || filtered[0];
+  sel.value = cur.id;
+  selectLattice();
+}
+
+function selectLattice() {
+  const id = document.getElementById('latticeSelect').value;
+  currentLattice = LATTICES.find(l => l.id === id) || LATTICES[1];
+  document.getElementById('bGroup').style.display = currentLattice.b ? 'block' : 'none';
+  document.getElementById('cGroup').style.display = currentLattice.c ? 'block' : 'none';
+  document.getElementById('betaGroup').style.display = currentLattice.beta ? 'block' : 'none';
+  updateInfo();
+  drawLattice();
+}
+
+function updateParam(p) {
+  const val = parseFloat(document.getElementById('param' + p.charAt(0).toUpperCase() + p.slice(1)).value);
+  params[p] = val;
+  document.getElementById(p + 'Val').textContent = val.toFixed(1);
+  drawLattice();
+}
+
+function updateInfo() {
+  const l = currentLattice;
+  document.getElementById('latticeInfo').innerHTML = `
+    <p class="text-emerald-300 font-semibold">${escapeHtml(l.name)}</p>
+    <p>記号: ${escapeHtml(l.symbol)}</p>
+    <p>結晶系: ${escapeHtml(l.system)}</p>
+    ${l.coord ? `<p>配位数: ${l.coord}</p>` : ''}
+    ${l.packing ? `<p>充填率: ${l.packing}%</p>` : ''}
+    <p>代表例: ${escapeHtml(l.example)}</p>
+  `;
+}
+
+function drawLattice() {
+  const canvas = document.getElementById('latticeCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#050810'; ctx.fillRect(0, 0, W, H);
+
+  const l = currentLattice;
+  const cx = W * 0.35, cy = H * 0.55;
+
+  // Isometric projection vectors
+  const scale = 60;
+  const ax = Math.cos(Math.PI * 7/6) * scale;
+  const ay = Math.sin(Math.PI * 7/6) * scale;
+  const bx = Math.cos(-Math.PI / 6) * scale;
+  const by = Math.sin(-Math.PI / 6) * scale;
+  const cvx = 0, cvy = -scale * (params.c / params.a) * 0.9;
+
+  // For monoclinic: tilt b vector
+  const betaRad = (params.beta * Math.PI / 180);
+  const bx_m = l.beta ? Math.cos(betaRad - Math.PI/6) * scale : bx;
+  const by_m = l.beta ? Math.sin(betaRad - Math.PI/6) * scale : by;
+
+  const corners = getUnitCellCorners(l);
+
+  // Draw edges
+  const edges = getEdges(l);
+  ctx.strokeStyle = '#059669'; ctx.lineWidth = 1.5;
+
+  edges.forEach(([i, j]) => {
+    const [ix, iy] = corners[i];
+    const [jx, jy] = corners[j];
+    const p1x = cx + ix * ax + iy * (l.beta ? bx_m : bx) + 0 * cvx;
+    const p1y = cy + ix * ay + iy * (l.beta ? by_m : by) + 0 * cvy;
+    const p2x = cx + jx * ax + jy * (l.beta ? bx_m : bx) + 0 * cvx;
+    const p2y = cy + jx * ay + jy * (l.beta ? by_m : by) + 0 * cvy;
+
+    // Actual projection using all 3 coords
+    const [i0,i1,i2] = corners[i];
+    const [j0,j1,j2] = corners[j];
+    const sx1 = cx + i0*ax + i1*(l.beta?bx_m:bx) + i2*cvx;
+    const sy1 = cy + i0*ay + i1*(l.beta?by_m:by) + i2*cvy;
+    const sx2 = cx + j0*ax + j1*(l.beta?bx_m:bx) + j2*cvx;
+    const sy2 = cy + j0*ay + j1*(l.beta?by_m:by) + j2*cvy;
+
+    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+  });
+
+  // Draw atoms
+  const atoms = getAtoms(l);
+  atoms.forEach(([ax_, ay_, az_, type]) => {
+    const sx = cx + ax_*ax + ay_*(l.beta?bx_m:bx) + az_*cvx;
+    const sy = cy + ax_*ay + ay_*(l.beta?by_m:by) + az_*cvy;
+
+    const r = type === 'corner' ? 6 : type === 'center' ? 8 : 7;
+    const col = type === 'corner' ? '#6ee7b7' : type === 'center' ? '#f59e0b' : '#60a5fa';
+
+    ctx.fillStyle = col;
+    ctx.shadowColor = col; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  // Axis labels
+  ctx.fillStyle = '#34d399'; ctx.font = '12px sans-serif';
+  ctx.fillText('a', cx + ax * 1.1, cy + ay * 1.1);
+  ctx.fillStyle = '#60a5fa';
+  ctx.fillText('b', cx + (l.beta?bx_m:bx) * 1.1, cy + (l.beta?by_m:by) * 1.1);
+  ctx.fillStyle = '#a78bfa';
+  ctx.fillText('c', cx + cvx * 1.1, cy + cvy * 1.1 - 5);
+
+  // Info label
+  ctx.fillStyle = '#94a3b8'; ctx.font = '11px sans-serif';
+  ctx.fillText(l.name, W * 0.55, 20);
+  ctx.font = '10px monospace';
+  ctx.fillText(`a=${params.a.toFixed(1)}Å  b=${params.b.toFixed(1)}Å  c=${params.c.toFixed(1)}Å`, W * 0.55, 36);
+  if (l.beta) ctx.fillText(`β=${params.beta}°`, W * 0.55, 52);
+
+  // Legend
+  let ly = H * 0.1;
+  [{col:'#6ee7b7',label:'頂点原子'},{col:'#f59e0b',label:'体心原子'},{col:'#60a5fa',label:'面心/底心原子'}].forEach(item => {
+    ctx.fillStyle = item.col;
+    ctx.beginPath(); ctx.arc(W*0.78, ly, 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
+    ctx.fillText(item.label, W*0.78+8, ly+4);
+    ly += 18;
+  });
+}
+
+function getUnitCellCorners(l) {
+  // [a, b, c] coordinates of 8 corners
+  return [
+    [0,0,0],[1,0,0],[0,1,0],[1,1,0],
+    [0,0,1],[1,0,1],[0,1,1],[1,1,1]
+  ];
+}
+
+function getEdges(l) {
+  return [
+    [0,1],[2,3],[4,5],[6,7],
+    [0,2],[1,3],[4,6],[5,7],
+    [0,4],[1,5],[2,6],[3,7]
+  ];
+}
+
+function getAtoms(l) {
+  const atoms = [];
+  // Corner atoms (all lattices)
+  [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]].forEach(c =>
+    atoms.push([...c, 'corner'])
+  );
+
+  if (l.id === 'bcc' || l.id === 'btet' || l.id === 'bco2') {
+    atoms.push([0.5, 0.5, 0.5, 'center']);
+  }
+  if (l.id === 'fcc' || l.id === 'fco') {
+    [[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],
+     [0.5,0.5,1],[0.5,1,0.5],[1,0.5,0.5]].forEach(c => atoms.push([...c,'face']));
+  }
+  if (l.id === 'bco' || l.id === 'bcm') {
+    [[0.5,0.5,0],[0.5,0.5,1]].forEach(c => atoms.push([...c,'face']));
+  }
+  if (l.id === 'hex') {
+    atoms.push([0.5, 0.5, 0.5, 'center']);
+    // Extra HCP basis
+    [[1/3, 2/3, 0.25],[2/3, 1/3, 0.75]].forEach(c => atoms.push([...c,'face']));
+  }
+  return atoms;
+}
+
+function renderLatticeGrid() {
+  const div = document.getElementById('latticeGrid');
+  div.innerHTML = LATTICES.map(l => `
+    <button onclick="selectFromGrid('${escapeHtml(l.id)}')"
+      class="p-1 rounded text-center hover:bg-gray-700 border border-gray-700 hover:border-emerald-500 transition-colors"
+      id="grid_${escapeHtml(l.id)}">
+      <div class="text-emerald-400 font-mono text-xs">${escapeHtml(l.symbol)}</div>
+      <div class="text-gray-400 text-xs leading-tight">${escapeHtml(l.name.split('(')[0].trim())}</div>
+    </button>
+  `).join('');
+}
+
+function selectFromGrid(id) {
+  const lattice = LATTICES.find(l => l.id === id);
+  if (!lattice) return;
+  currentLattice = lattice;
+  document.getElementById('crystalSystem').value = lattice.system;
+  filterLattices();
+  document.getElementById('latticeSelect').value = id;
+  selectLattice();
+}
+
+filterLattices();
+renderLatticeGrid();
+updateInfo();
+drawLattice();
+</script>
+</body>
+</html>
